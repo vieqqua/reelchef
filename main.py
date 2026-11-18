@@ -25,10 +25,11 @@ client = genai.Client()
 def generate_with_fallback(contents, schema, temp=0.2):
     # Lista di modelli da provare in ordine (escludendo i vecchi 2.5 e 1.5)
     candidate_models = [
-        "gemini-3-flash-preview",
-        "gemini-3-flash",
-        "gemini-3.0-flash",
-        "gemini-2.0-flash"
+     "gemini-3-flash-preview",
+     "gemini-3-flash",
+     "gemini-2.5-flash-lite",
+     "gemini-2.0-flash",
+     "gemini-2.0-flash-lite"
     ]
     
     # Aggiunge in coda eventuali altri modelli 'flash' o 'pro' attivi sull'account (esclusi i 2.5)
@@ -54,10 +55,12 @@ def generate_with_fallback(contents, schema, temp=0.2):
                 )
             )
         except Exception as e:
-            last_error = e
-            if "404" in str(e) or "NOT_FOUND" in str(e):
-                continue
-            raise e
+         last_error = e
+         err_str = str(e)
+         if any(k in err_str for k in ["404", "NOT_FOUND", "503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED"]):
+             time.sleep(2)
+             continue
+         raise e
     raise last_error
 
 class Ingredient(BaseModel):
