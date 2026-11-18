@@ -145,7 +145,7 @@
             input.focus();
         }
 
-     async function extractRecipe() {
+        async function extractRecipe() {
             const url = document.getElementById('reelUrl').value.trim();
             if (!url) return alert("Inserisci un link valido!");
             
@@ -157,7 +157,6 @@
 
             try {
                 let data = null;
-                // Prova fino a 3 volte se il server di Render si sta svegliando o aggiorna (e restituisce HTML invece di JSON)
                 for (let attempt = 1; attempt <= 3; attempt++) {
                     try {
                         const res = await fetch('/api/extract', {
@@ -168,7 +167,6 @@
                         
                         const rawText = await res.text();
                         
-                        // Se inizia con '<' è una pagina HTML temporanea di Render (502/503), attendi e riprova
                         if (rawText.trim().startsWith('<')) {
                             if (attempt < 3) {
                                 status.textContent = `⏳ Il server gratuito si sta svegliando, attendi... (tentativo ${attempt}/3)`;
@@ -182,7 +180,7 @@
                         data = JSON.parse(rawText);
                         if (res.status === 401) { localStorage.removeItem('reelchef_pin'); throw new Error("PIN errato! Riprova."); }
                         if (!res.ok) throw new Error(data.detail || "Errore durante l'estrazione");
-                        break; // Tutto ok, esce dal ciclo!
+                        break;
                         
                     } catch (netErr) {
                         if (attempt < 3 && (netErr.message.includes("Failed to fetch") || netErr.message.includes("NetworkError"))) {
@@ -194,54 +192,6 @@
                     }
                 }
 
-                renderRecipe(data);
-                loadArchive();
-            } catch (err) {
-                alert("Errore: " + err.message);
-            } finally {
-                status.classList.add('hidden');
-                btn.disabled = false;
-            }
-        }
-
-            try {
-                // 1. Colpetto preliminare per svegliare Render se era in standby
-                await fetch('/manifest.json', { cache: 'no-store' }).catch(() => {});
-
-                // 2. Chiamata di estrazione (con secondo tentativo automatico se la rete cade)
-                let res;
-                try {
-                    res = await fetch('/api/extract', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json', 'X-App-Pin': getPin()},
-                        body: JSON.stringify({url})
-                    });
-                } catch (netErr) {
-                    status.textContent = "⏳ Server appena svegliato, avvio l'estrazione...";
-                    await new Promise(r => setTimeout(r, 3000));
-                    res = await fetch('/api/extract', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json', 'X-App-Pin': getPin()},
-                        body: JSON.stringify({url})
-                    });
-                }
-
-                const data = await res.json();
-                if (res.status === 401) { localStorage.removeItem('reelchef_pin'); throw new Error("PIN errato! Riprova."); }
-                if (!res.ok) throw new Error(data.detail || "Errore durante l'estrazione");
-                renderRecipe(data);
-                loadArchive();
-            } catch (err) {
-                alert("Errore: " + (err.message === "Failed to fetch" ? "Connessione interrotta (tieni lo schermo acceso e riprova tra 5 secondi)" : err.message));
-            } finally {
-                status.classList.add('hidden');
-                btn.disabled = false;
-            }
-        })
-                });
-                const data = await res.json();
-                if (res.status === 401) { localStorage.removeItem('reelchef_pin'); throw new Error("PIN errato! Riprova."); }
-                if (!res.ok) throw new Error(data.detail || "Errore durante l'estrazione");
                 renderRecipe(data);
                 loadArchive();
             } catch (err) {
@@ -290,24 +240,26 @@
         }
 
         async function loadArchive() {
-            const res = await fetch('/api/recipes', {headers: {'X-App-Pin': getPin()}});
-            if (res.status === 401) return;
-            const recipes = await res.json();
-            const list = document.getElementById('archiveList');
-            list.innerHTML = recipes.length ? '' : '<p class="text-xs text-slate-500">Nessuna ricetta ancora salvata.</p>';
-            recipes.forEach(r => {
-                const div = document.createElement('div');
-                div.className = "bg-slate-800 p-3 rounded-lg border border-slate-700 flex justify-between items-center cursor-pointer hover:border-orange-500";
-                div.onclick = () => { renderRecipe(r); window.scrollTo({top: 0, behavior: 'smooth'}); };
-                div.innerHTML = `<div><p class="font-bold text-sm text-orange-300">${r.title}</p><p class="text-xs text-slate-400">⏱️ ${r.prep_time} • ${r.ingredients.length} ingredienti</p></div><span class="text-slate-400">👉</span>`;
-                list.appendChild(div);
-            });
+            try {
+                const res = await fetch('/api/recipes', {headers: {'X-App-Pin': getPin()}});
+                if (res.status === 401) return;
+                const recipes = await res.json();
+                const list = document.getElementById('archiveList');
+                list.innerHTML = recipes.length ? '' : '<p class="text-xs text-slate-500">Nessuna ricetta ancora salvata.</p>';
+                recipes.forEach(r => {
+                    const div = document.createElement('div');
+                    div.className = "bg-slate-800 p-3 rounded-lg border border-slate-700 flex justify-between items-center cursor-pointer hover:border-orange-500";
+                    div.onclick = () => { renderRecipe(r); window.scrollTo({top: 0, behavior: 'smooth'}); };
+                    div.innerHTML = `<div><p class="font-bold text-sm text-orange-300">${r.title}</p><p class="text-xs text-slate-400">⏱️ ${r.prep_time} • ${r.ingredients.length} ingredienti</p></div><span class="text-slate-400">👉</span>`;
+                    list.appendChild(div);
+                });
+            } catch (e) {}
         }
 
         window.addEventListener('DOMContentLoaded', () => {
             loadArchive();
             const params = new URLSearchParams(window.location.search);
-            const sharedText = params.get('url') || params.get('text') || params.get('title') || '';
+            const sharedText = [params.get('url'), params.get('text'), params.get('title')].filter(Boolean).join(' ');
             const urlMatch = sharedText.match(/https?:\/\/[^\s]+/);
             if (urlMatch) {
                 document.getElementById('reelUrl').value = urlMatch[0];
