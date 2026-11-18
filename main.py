@@ -98,7 +98,8 @@ def download_facebook_reel(url: str) -> tuple[Path, str]:
     video_id = str(uuid.uuid4())[:8]
     output_template = str(TEMP_DIR / f"reel_{video_id}.%(ext)s")
     ydl_opts = {
-        'format': 'worst[ext=mp4]/mp4/best',
+        'format': 'worst[ext=mp4]/worst/mp4',
+        'max_filesize': 30 * 1024 * 1024, # Evita crash di RAM su Render Free
         'outtmpl': output_template,
         'quiet': True,
         'no_warnings': True,
