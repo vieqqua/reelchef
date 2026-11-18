@@ -17,25 +17,49 @@ app = FastAPI(title="ReelChef AI")
 TEMP_DIR = Path("temp_videos")
 TEMP_DIR.mkdir(exist_ok=True)
 
-# Variabili segrete che imposteremo su Render
 APP_PIN = os.environ.get("APP_PIN", "1234")
 SHEET_URL = os.environ.get("SHEET_URL", "")
 
 client = genai.Client()
-def get_best_model() -> str:
+
+def generate_with_fallback(contents, schema, temp=0.2):
+    # Lista di modelli da provare in ordine (escludendo i vecchi 2.5 e 1.5)
+    candidate_models = [
+        "gemini-3-flash-preview",
+        "gemini-3-flash",
+        "gemini-3.0-flash",
+        "gemini-2.0-flash"
+    ]
+    
+    # Aggiunge in coda eventuali altri modelli 'flash' o 'pro' attivi sull'account (esclusi i 2.5)
     try:
-        # Chiede a Google i modelli attivi sulla tua API Key
-        models = [m.name.replace("models/", "") for m in client.models.list()]
-        for preferred in ["gemini-3.0-flash", "gemini-3.0-flash-preview", "gemini-2.0-flash"]:
-            if preferred in models:
-                return preferred
-        # Se hanno nomi diversi, prende il primo modello 'flash' disponibile
-        for m in models:
-            if "flash" in m and "8b" not in m:
-                return m
+        for m in client.models.list():
+            name = m.name.replace("models/", "")
+            if ("flash" in name or "gemini-3" in name) and "2.5" not in name and "1.5" not in name:
+                if name not in candidate_models:
+                    candidate_models.insert(0, name)
     except Exception:
         pass
-    return "gemini-3.0-flash"
+
+    last_error = None
+    for model_name in candidate_models:
+        try:
+            return client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=schema,
+                    temperature=temp
+                )
+            )
+        except Exception as e:
+            last_error = e
+            if "404" in str(e) or "NOT_FOUND" in str(e):
+                continue
+            raise e
+    raise last_error
+
 class Ingredient(BaseModel):
     item: str = Field(description="Nome dell'ingrediente, es. 'Guanciale' o 'Farina 00'")
     amount: str = Field(description="Quantità e unità di misura, es. '150g', '2 cucchiai', 'q.b.'")
@@ -107,15 +131,7 @@ def extract_recipe(req: ExtractRequest, x_app_pin: Optional[str] = Header(None))
         Estrai la ricetta completa in italiano. Se mancano dosi esatte, deducile tu in base alle proporzioni visibili specificando '(dose stimata)' nelle note.
         """
 
-        response = client.models.generate_content(
-            model=get_best_model(),
-            contents=[uploaded_file, prompt],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=RecipeSchema,
-                temperature=0.2
-            )
-        )
+        response = generate_with_fallback([uploaded_file, prompt], RecipeSchema, temp=0.2)
         
         recipe_data = json.loads(response.text)
         recipe_data["id"] = str(uuid.uuid4())[:8]
@@ -144,15 +160,8 @@ def substitute_ingredients(req: SubstituteRequest, x_app_pin: Optional[str] = He
     Richiesta di modifica: "{req.modification_request}"
     Riscrivi il JSON applicando la modifica, bilanciando le dosi e spiegando cosa cambia in 'chef_tips'.
     """
-    response = client.models.generate_content(
-        model=get_best_model(),
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=RecipeSchema,
-            temperature=0.3
-        )
-    )
+    response = generate_with_fallback(prompt, RecipeSchema, temp=0.3)
+    
     updated_recipe = json.loads(response.text)
     updated_recipe["id"] = req.recipe.get("id", str(uuid.uuid4())[:8])
     updated_recipe["source_url"] = req.recipe.get("source_url", "")
