@@ -22,7 +22,20 @@ APP_PIN = os.environ.get("APP_PIN", "1234")
 SHEET_URL = os.environ.get("SHEET_URL", "")
 
 client = genai.Client()
-
+def get_best_model() -> str:
+    try:
+        # Chiede a Google i modelli attivi sulla tua API Key
+        models = [m.name.replace("models/", "") for m in client.models.list()]
+        for preferred in ["gemini-3.0-flash", "gemini-3.0-flash-preview", "gemini-2.0-flash"]:
+            if preferred in models:
+                return preferred
+        # Se hanno nomi diversi, prende il primo modello 'flash' disponibile
+        for m in models:
+            if "flash" in m and "8b" not in m:
+                return m
+    except Exception:
+        pass
+    return "gemini-3.0-flash"
 class Ingredient(BaseModel):
     item: str = Field(description="Nome dell'ingrediente, es. 'Guanciale' o 'Farina 00'")
     amount: str = Field(description="Quantità e unità di misura, es. '150g', '2 cucchiai', 'q.b.'")
@@ -95,7 +108,7 @@ def extract_recipe(req: ExtractRequest, x_app_pin: Optional[str] = Header(None))
         """
 
         response = client.models.generate_content(
-            model='gemini-flash-latest',
+            model=get_best_model(),
             contents=[uploaded_file, prompt],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -132,7 +145,7 @@ def substitute_ingredients(req: SubstituteRequest, x_app_pin: Optional[str] = He
     Riscrivi il JSON applicando la modifica, bilanciando le dosi e spiegando cosa cambia in 'chef_tips'.
     """
     response = client.models.generate_content(
-        model='gemini-flash-latest',
+        model=get_best_model(),
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
