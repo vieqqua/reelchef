@@ -145,15 +145,64 @@
             input.focus();
         }
 
-       async function extractRecipe() {
+     async function extractRecipe() {
             const url = document.getElementById('reelUrl').value.trim();
             if (!url) return alert("Inserisci un link valido!");
             
             const status = document.getElementById('statusMsg');
             const btn = document.getElementById('btnExtract');
             status.classList.remove('hidden');
-            status.textContent = "⏳ Sveglio il server e scarico il Reel (tieni lo schermo acceso 15-30 sec)...";
+            status.textContent = "⏳ Connessione allo Chef Gemini in corso (15-30 sec)...";
             btn.disabled = true;
+
+            try {
+                let data = null;
+                // Prova fino a 3 volte se il server di Render si sta svegliando o aggiorna (e restituisce HTML invece di JSON)
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        const res = await fetch('/api/extract', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json', 'X-App-Pin': getPin()},
+                            body: JSON.stringify({url})
+                        });
+                        
+                        const rawText = await res.text();
+                        
+                        // Se inizia con '<' è una pagina HTML temporanea di Render (502/503), attendi e riprova
+                        if (rawText.trim().startsWith('<')) {
+                            if (attempt < 3) {
+                                status.textContent = `⏳ Il server gratuito si sta svegliando, attendi... (tentativo ${attempt}/3)`;
+                                await new Promise(r => setTimeout(r, 5000));
+                                continue;
+                            } else {
+                                throw new Error("Il server su Render si sta ancora avviando o il video è troppo lungo. Riprova tra 10 secondi!");
+                            }
+                        }
+
+                        data = JSON.parse(rawText);
+                        if (res.status === 401) { localStorage.removeItem('reelchef_pin'); throw new Error("PIN errato! Riprova."); }
+                        if (!res.ok) throw new Error(data.detail || "Errore durante l'estrazione");
+                        break; // Tutto ok, esce dal ciclo!
+                        
+                    } catch (netErr) {
+                        if (attempt < 3 && (netErr.message.includes("Failed to fetch") || netErr.message.includes("NetworkError"))) {
+                            status.textContent = `⏳ Riconnessione al server... (tentativo ${attempt}/3)`;
+                            await new Promise(r => setTimeout(r, 4000));
+                            continue;
+                        }
+                        throw netErr;
+                    }
+                }
+
+                renderRecipe(data);
+                loadArchive();
+            } catch (err) {
+                alert("Errore: " + err.message);
+            } finally {
+                status.classList.add('hidden');
+                btn.disabled = false;
+            }
+        }
 
             try {
                 // 1. Colpetto preliminare per svegliare Render se era in standby
