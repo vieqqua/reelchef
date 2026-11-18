@@ -145,20 +145,50 @@
             input.focus();
         }
 
-        async function extractRecipe() {
+       async function extractRecipe() {
             const url = document.getElementById('reelUrl').value.trim();
             if (!url) return alert("Inserisci un link valido!");
             
             const status = document.getElementById('statusMsg');
             const btn = document.getElementById('btnExtract');
             status.classList.remove('hidden');
+            status.textContent = "⏳ Sveglio il server e scarico il Reel (tieni lo schermo acceso 15-30 sec)...";
             btn.disabled = true;
 
             try {
-                const res = await fetch('/api/extract', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json', 'X-App-Pin': getPin()},
-                    body: JSON.stringify({url})
+                // 1. Colpetto preliminare per svegliare Render se era in standby
+                await fetch('/manifest.json', { cache: 'no-store' }).catch(() => {});
+
+                // 2. Chiamata di estrazione (con secondo tentativo automatico se la rete cade)
+                let res;
+                try {
+                    res = await fetch('/api/extract', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json', 'X-App-Pin': getPin()},
+                        body: JSON.stringify({url})
+                    });
+                } catch (netErr) {
+                    status.textContent = "⏳ Server appena svegliato, avvio l'estrazione...";
+                    await new Promise(r => setTimeout(r, 3000));
+                    res = await fetch('/api/extract', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json', 'X-App-Pin': getPin()},
+                        body: JSON.stringify({url})
+                    });
+                }
+
+                const data = await res.json();
+                if (res.status === 401) { localStorage.removeItem('reelchef_pin'); throw new Error("PIN errato! Riprova."); }
+                if (!res.ok) throw new Error(data.detail || "Errore durante l'estrazione");
+                renderRecipe(data);
+                loadArchive();
+            } catch (err) {
+                alert("Errore: " + (err.message === "Failed to fetch" ? "Connessione interrotta (tieni lo schermo acceso e riprova tra 5 secondi)" : err.message));
+            } finally {
+                status.classList.add('hidden');
+                btn.disabled = false;
+            }
+        })
                 });
                 const data = await res.json();
                 if (res.status === 401) { localStorage.removeItem('reelchef_pin'); throw new Error("PIN errato! Riprova."); }
