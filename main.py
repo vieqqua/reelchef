@@ -95,7 +95,7 @@ def extract_recipe(req: ExtractRequest, x_app_pin: Optional[str] = Header(None))
         """
 
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-flash-latest',
             contents=[uploaded_file, prompt],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -132,7 +132,7 @@ def substitute_ingredients(req: SubstituteRequest, x_app_pin: Optional[str] = He
     Riscrivi il JSON applicando la modifica, bilanciando le dosi e spiegando cosa cambia in 'chef_tips'.
     """
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model='gemini-flash-latest',
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
